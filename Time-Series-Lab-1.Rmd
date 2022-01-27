@@ -1,0 +1,194 @@
+---
+title: "Time Series Lab 1 - APC Analysis"
+author: "Andrea Tillotson"
+date: "10/11/2021"
+output:
+  pdf_document: default
+---
+
+```{r, message = FALSE}
+gss <- read.csv("~/Desktop/QMSS/trends-gss.csv")
+library(QMSS)
+library(ggplot2)
+library(plyr)
+library(rms)
+library(Epi)
+library(tidyverse)
+```
+
+# An Age-Period-Cohort Analysis on the FAIR variable in the GSS
+
+For this lab, I chose to look at the *fair* variable on the General Social Survey. This variable asks respondents, "Do you think most people would try to take advantage of you if they got a chance, or would they try to be fair?" Respondents can choose either "Would take advantage of you" (1), "Would try to be fair" (2) or "Depends" (3). I'm curious about whether there are age, period, and/or cohort effects on this variable, so I will also be assessing the variables *age*, *year*, and *cohort*. Below, I subset the variables of interest, take out any NA responses, and show a table of the responses for the *fair* variable.
+
+```{r}
+vars <- c("fair", "age", "year", "cohort")
+sub <- gss[, vars]
+sub <- na.omit(sub)
+Tab(sub$fair)
+```
+
+The table shows that about 37% of respondents -- across all of the times the variable *fair* has been asked -- feel that most people would try to take advantage of them if they got the chance while about 56% of respondents felt that most people would try to be fair. About 6.6% said it depends. Because there are few "Depends" responses and because this may confuse the analysis when comparing the mean response for *fair*, I chose to drop "Depends" responses for the purpose of this analysis. I also chose not to recode the "Would try to take advantage of you" (1) and "Would try to be fair" (2) responses as I thought it would make sense for the mean to increase the more fair someone thought most people are. The new tabulation can be viewed below.
+
+```{r}
+sub <- droplevels(subset(sub, fair != 3))
+Tab(sub$fair)
+```
+
+
+In the next chunk of code, I break up each of the age/period/cohort variables into 10 groups by year using the cut() function.
+
+```{r}
+sub <- mutate(sub,
+              age_cut = cut(age, breaks = 10, labels = FALSE, right = FALSE),
+              year_cut = cut(year, breaks = 10, labels = FALSE, right = FALSE),
+              cohort_cut = cut(cohort, breaks = 10, labels = FALSE, right = FALSE))
+
+```
+
+## Explaining *age_cut*, *year_cut*, and *cohort_cut*
+
+In the graphs below, a smaller *age_cut* number corresponds to younger individuals **at the time the survey was taken** while a larger *age_cut* number indicates a group of older individuals. For example, *age_cut* 1 contains individuals who were between 18-25 years old at the time they took the survey. Conversely, *age_cut* 10 contains individuals who were older than 82 at the time they took the survey.
+
+The same logic applies for *year_cut* and *cohort_cut*. A smaller cut number indicates some earlier period of time. For *year_cut*, cut 1 contains all survey responses between 1972 and 1975 while cut 10 contains survey responses between 2008 and 2012. For *cohort_cut*, cut 1 contains survey respondents born before 1894 while cut 10 contains respondents born between 1983 and 1994. The specific cuts for each variable can be seen below.
+
+```{r}
+ddply(sub, "age_cut", summarise, min = min(age), max = max(age))
+ddply(sub, "year_cut", summarise, min = min(year), max = max(year))
+ddply(sub, "cohort_cut", summarise, min = min(cohort), max = max(cohort))
+```
+
+## Tabulating and Plotting APC dimensions
+
+**Please note:** For each dimension, my discussion primarily focus on the first of the two graphs I made. The second graph for each dimension shows the variables flipped. I did this mostly as an extra practice on the coding and included them for reference in case you are interested.
+
+### 1 Age (*age*) / Cohort (*cohort*)
+
+I tabulate the age-cohort dimension below. From both the tabulation and the graph below it, we can observe that the mean fairness score increases for older age groups. For example, *age_cut* 1 had a mean fairness score of 1.458, *age_cut* 10 had a fairness score of 1.742. This overall trend up as age increases indicates older age groups (more so than younger age groups) tend to believe most people would be fair if they had the chance to take advantage of them.
+
+There are also potentially some cohort effects observed here. These are visualized most clearly on the graph. Though it seems most of the cohorts trend somewhat closely, it looks like cohorts 9 and 10 may be departing a bit from their predecessors. Their fairness scores at *age_cut* 1 start off about 0.1 lower than other cohorts. That being said, we don't have data for these cohorts beyond 2012, so we cannot observe how these cohorts trend after their early 30s and mid 40s, respectively. Cohort 8 also has a trend I would be interested in observing beyond 2012 as their fairness score did not increase at the same rate previous cohorts' had in their 30s and 40s.
+
+```{r}
+tab_age_cohort <- stat.table(index = list("AGE" = age_cut, "COHORT" = cohort_cut),
+                             contents = mean(fair),
+                             margins = TRUE,
+                             data = sub)
+
+print(tab_age_cohort, digits = 3)
+```
+
+```{r}
+age_cohort <- ddply(sub, c("age_cut", "cohort_cut"),
+                    summarise, FAIR = mean(fair))
+g_age_cohort <- ggplot(age_cohort, mapping = aes(x = age_cut, y = FAIR,
+                                                 group = cohort_cut,
+                                                 color = factor(cohort_cut)))
+g_age_cohort <- g_age_cohort + geom_point(size = 3) + geom_line()
+g_age_cohort + ylim(1.25, 1.9)
+```
+
+```{r}
+cohort_age <- ddply(sub, c("cohort_cut", "age_cut"),
+                    summarise, FAIR = mean(fair))
+g_cohort_age <- ggplot(cohort_age, mapping = aes(x = cohort_cut, y = FAIR,
+                                                 group = age_cut,
+                                                 color = factor(age_cut)))
+g_cohort_age <- g_cohort_age + geom_point(size = 3) + geom_line()
+g_cohort_age + ylim(1.25, 1.9)
+```
+
+### 2 Period (*year*) / Age (*age*)
+
+In this table and graph, we see how fairness trends across age cuts and year (i.e. period) cuts. Once again, we see that, for the most part, as respondents' ages increase, their average fairness score does as well. We can see in the graph, however, that for *year_cut* 6-10 (i.e. survey responses collected between 1993 and 2012), there is a bit of a drop (around 0.05-0.08) in where fairness scores start off for 18-25 year olds. These later year cuts still show an upward trend in the fairness score with age and, at about age cut 6 (ages 54-60), lose the separation from earlier year cuts. The early differences, however, are of interest. Why do surveys taken between 1993-2012 display lower fairness scores on average for those under the age of 54?
+
+
+```{r}
+tab_age_year <- stat.table(index = list("YEAR" = year_cut, "AGE" = age_cut),
+                           contents = mean(fair),
+                           margins = TRUE,
+                           data = sub)
+
+print(tab_age_year, digits = 3)
+```
+
+```{r}
+age_year <- ddply(sub, c("age_cut", "year_cut"),
+                  summarise, FAIR = mean(fair))
+g_age_year <- ggplot(age_year, mapping = aes(x = age_cut, y = FAIR,
+                                             group = year_cut, color = factor(year_cut)))
+
+g_age_year <- g_age_year + geom_point(size = 3) + geom_line()
+g_age_year + ylim(1.25, 1.9)
+```
+
+```{r}
+year_age <- ddply(sub, c("year_cut", "age_cut"),
+                  summarise, FAIR = mean(fair))
+g_year_age <- ggplot(year_age, mapping = aes(x = year_cut, y = FAIR,
+                                             group = age_cut, color = factor(age_cut)))
+
+g_year_age <- g_year_age + geom_point(size = 3) + geom_line()
+g_year_age + ylim(1.25, 1.9)
+```
+
+### 3 Cohort (*cohort*) / Period (*year*)
+
+The final dimension of age-period-cohort is the cohort-period dimension, visualized below through both a table and graph. We can see that, within cohorts, fairness score appears somewhat stable, though there are some year cuts for which a cohort experiences a more significant bump or drop in fairness score. For example, cohort cut 4 (born between 1923 and 1927) experiences a relatively big jump in fairness score for survey years 2004-2006. This is followed by a relatively big drop in fairness score for survey years 2008-2012 for the same cohort. Outside of limited cohort-specific abnormalities, there seems to be a fair amount of fairness score stability within cohorts. One year cut of note is cut 6 (surveys taken between 1993 and 1994), where five of the eight cohorts there are data for experience slight drops in fairness score. Year cut 10 (surveys taken between 2008 and 2012) sees a slight increase in fairness score for five of seven cohorts for which there are data. These *may* indicate some period effects. However, as discussed by Harding and Jencks 2003, we should be careful when assessing cohort-period effects as cohort effects can be interpreted as enduring period effects. Therefore, it is somewhat challenging to interpret the graph below or be more definitive about what it reflects.
+
+
+```{r}
+tab_year_cohort <- stat.table(index = list("YEAR" = year_cut, "COHORT" = cohort_cut),
+                              contents = mean(fair),
+                              margins = TRUE,
+                              data = sub)
+print(tab_year_cohort, digits = 3)
+```
+
+```{r}
+year_cohort <- ddply(sub, c("year_cut", "cohort_cut"),
+                    summarise, FAIR = mean(fair))
+g_year_cohort <- ggplot(year_cohort, mapping = aes(x = year_cut, y = FAIR,
+                                                   group = cohort_cut, color = factor(cohort_cut)))
+g_year_cohort <- g_year_cohort + geom_point(size = 3) + geom_line()
+g_year_cohort + ylim(1.25, 1.9)
+                      
+```
+
+```{r}
+cohort_year <- ddply(sub, c("cohort_cut", "year_cut"),
+                    summarise, FAIR = mean(fair))
+g_cohort_year <- ggplot(cohort_year, mapping = aes(x = cohort_cut, y = FAIR,
+                                                   group = year_cut, color = factor(year_cut)))
+g_cohort_year <- g_cohort_year + geom_point(size = 3) + geom_line()
+g_cohort_year + ylim(1.25, 1.9)
+                      
+```
+
+## A Parsimonious Model for the FAIR Variable
+
+Before deciphering a more parsimonious age-period-cohort model for the *fair* variable, I wanted to get a preliminary sense of all of the individual cuts across *age*, *year*, and *cohort*. I ran the following model:
+
+```{r}
+lm_all <- lm(fair ~ factor(age_cut) + factor(year_cut) + factor(cohort_cut), data = sub)
+summary(lm_all)
+```
+
+All of the age cuts are statistically significant in this model at the 0.001 level and we can see that each additional age cut increases their average fairness score by some quantity. Outside of *age_cut*, only year cuts 6 and 7 are statistically significant at the 0.05 and 0.01 levels respectively. These takeaways aren't surprising given what we could observe from the graphs discussed earlier. Rather consistently, *age* seemed to have a positive relationship with *fair*. That is, higher age cuts tended to have higher fairness scores than their younger counterparts.
+
+For year cuts 6 and 7, the dip in fairness score had been observed in earlier discussion of the graphs. For reference, years cuts 6 and 7 refer to surveys taken between 1993 and 1994 and between 1996 and 1998 respectively. Perhaps there is some event during these years that resulted in a dip in a sense of other people's fairness.
+
+In light of these observations from the model above, for the more parsimonious model, I decided to make a dummy variable that would code year cuts 6 and greater as a new variable, *late*. If this results to be statistically significant, there may be some evidence that after 1993 there was a general dip in fairness score across respondents as compared to those that took the survey before 1993. I also kept *age* in the model, but I decided to use the *age* variable rather than *age_cut* since explaining the effect of *age* is a bit more intuitive than explaining *age_cut*. This model, *lm_fair*, is shown below.
+
+```{r}
+sub$late = ifelse(sub$year_cut >= 6, 1,0)
+
+lm_fair <- lm(fair ~ late + age, data = sub)
+summary(lm_fair)
+```
+
+Even when including *age* rather than *age_cut*, all variables are statistically significant at the 0.001 level. Interestingly, the dummy variable (*late*) also is statistically significant at the 0.001, which is a higher level of significance than was achieved by either year cut 6 or 7 in the *lm_all* model. The *lm_fair* regression model can be interpreted as saying that the average fairness score can be predicted using a function of respondents' *age* and whether they took the survey in the *late* period (1993 and after) or early period. For one-year increase in age, the average fairness score increases by 0.0042056. Meanwhile, for responses collected pre-1993, the fairness score is 0.0707640 more on average than responses collected 1993 and later.
+
+The more simplified model does reduce the resulting R-squared by about 0.0045, as shown below, but *lm_fair* still retains a fair amount of explanatory power, relative to *lm_all*.
+
+```{r}
+c(Model1 = summary(lm_all)$adj, Model2 = summary(lm_fair)$adj)
+```
